@@ -1,0 +1,1262 @@
+---
+title: "R Notebook"
+output:
+  html_document:
+    df_print: paged
+  pdf_document: default
+---
+
+On va effectuer une analyse pour donner le panorama de l'état de la sous-nutrition dans le monde. On va utiliser les données issues du FAO, [Food and Agriculture Organization of the United Nations (FAO)](http://www.fao.org/home/fr/), l'un des organes qui composent l'ONU.
+
+La première étape, c'est d'importer les librairies et les fichiers utiles à notre analyse, puis on se concentrera sur différents points d'analyse de données.
+
+# 1 Import du Package
+
+On importe la librairie suivante **tidyverse** (<https://www.tidyverse.org/>) qui contient un Package de librairies utiles à la data science. Par exemple :
+
+-   **ggplot2** qui permet de créer des graphiques
+
+-   ou **dplyr** qui permet la manipulation de données
+
+Ainsi que la librairie **ggthemes**, qui fourni des thèmes pour les graphiques et la librairie **extrafont**, qui importe des nouvelles polices de caractères pour nos graphiques**.**
+
+```{r}
+library(tidyverse)
+library(ggthemes)
+library(extrafont)
+```
+
+On importe les nouvelles police de caractères
+
+```{r}
+font_import()
+```
+
+```{r}
+fonts()
+```
+
+# **2 Import des fichiers CSV**
+
+On importe les quatre fichiers CSV suivant qui vont nous être utile pour l'analyse que l'on va effectuer sur ce document.
+
+## 2.1 Import fichier sous_nutrition.csv
+
+```{r}
+sous_nutrition = read.csv("DAN-P4-FAO/sous_nutrition.csv",sep = ",",dec = ".",header = TRUE)
+summary(sous_nutrition)
+```
+
+Le fichier **sous_nutrition** inclut :
+
+-   Le pays.
+
+-   Intervalle d'années.
+
+-   Le nombre de personnes en sous-alimentation en millions d'habitants (ex. : pour l'intervalle 2016-2018, le nombre de personnes correspond à la moyenne sur ces 3 années, on peut le résumer en 2017).
+
+Voici ce que ça donne :
+
+```{r}
+head(sous_nutrition)
+```
+
+La colonne valeur est en format texte, car certaines zones ont pour valeur la chaîne de caractères suivantes : "\<0.1"
+
+Par exemple :
+
+```{r}
+filter(sous_nutrition, Valeur == "<0.1")
+```
+
+On remplace la valeur de cette chaîne de caractères par zéro, car la valeur est faible par rapport aux autres zones.
+
+```{r}
+sous_nutrition = sous_nutrition %>% mutate(Valeur = replace(Valeur, Valeur == "<0.1", 0))
+```
+
+On convertie la colonne Valeur en numérique et on la ramène en nombre d'habitants, plutôt qu'en millions.
+
+```{r}
+# conversion en numérique
+sous_nutrition$Valeur = as.numeric(as.character(sous_nutrition$Valeur))
+
+# Convertir la colonne valeur en nombre d'habitants
+sous_nutrition$Valeur = sous_nutrition$Valeur * 1000000
+```
+
+On va supprimer les lignes à la valeur NA, car cela correspond au pays où la sous-nutrition n'existe pas.
+
+```{r}
+sous_nutrition = sous_nutrition %>% filter(!is.na(Valeur))
+```
+
+Et voilà, on a les colonnes de la table dans le bon format.
+
+```{r}
+summary(sous_nutrition)
+
+```
+
+Voici ce que ça donne
+
+```{r}
+head(sous_nutrition)
+```
+
+## 2.2 Import du fichier population.csv
+
+```{r}
+
+population = read.csv("DAN-P4-FAO/population.csv",sep = ",",dec = ".")
+summary(population)
+```
+
+le fichier de population qui inclut :
+
+-   Le pays.
+
+-   L'année.
+
+-   La population du pays, exprimée en milliers d'habitants.
+
+Voici ce que ça donne :
+
+```{r}
+head(population)
+```
+
+On ramène en nombre d'habitants, plutôt qu'en millier.
+
+```{r}
+
+# Convertir la colonne valeur en nombre d'habitants
+population$Valeur = population$Valeur * 1000
+
+```
+
+Et voilà
+
+```{r}
+
+# résumé
+summary(population)
+```
+
+Voici ce que ça donne :
+
+```{r}
+head(sous_nutrition)
+```
+
+## 2.3 Import du fichier dispo_alimentaire.csv
+
+```{r}
+
+dispo_alimentaire = read.csv("DAN-P4-FAO/dispo_alimentaire.csv",sep = ",",dec = ".")
+
+summary(dispo_alimentaire)
+```
+
+Le fichier de disponibilité alimentaire pour l'année 2017 contient 17 variables 
+
+-   Le pays.
+
+-   Le produit.
+
+-   4 variables de disponibilité alimentaire. Ces 4 variables sont exprimées dans des unités bien spécifiques,précisées directement dans le nom de la variable. À noter cependant que la notation *kcal* est un abus de langage, elle correspond à une calorie réelle.
+
+-   10 variables qui précisent les utilisations/moyens d'acquisition de la disponibilité alimentaire. Elles sont toutes exprimées en **milliers de tonnes**.
+
+-   Enfin, une variable type qui précise si le produit est d'origine animale ou végétale.
+
+```{r}
+head(dispo_alimentaire)
+```
+
+On va remplacer les valeurs NA par zéro à fin de faciliter les calculs par la suite.
+
+```{r}
+dispo_alimentaire[is.na(dispo_alimentaire)] = 0 
+```
+
+On convertit les 10 variables qui précisent l'utilisation et les moyens d'acquisition de la disponibilité alimentaire en kilogrammes.
+
+```{r}
+dispo_alimentaire[,c(4,5,10:18)] =  dispo_alimentaire[,c(4,5,10:18)] * 1000000
+```
+
+Et Voilà
+
+```{r}
+head(dispo_alimentaire)
+```
+
+## 2.4 Import du fichier aide_alimentaire.csv
+
+```{r}
+aide_alimentaire = read.csv("DAN-P4-FAO/aide_alimentaire.csv",sep = ",",dec = ".")
+
+#résumé
+summary(aide_alimentaire)
+```
+
+Le fichier d'aide alimentaire contient :
+
+-   Le pays bénéficiaire.
+
+-   L'année.
+
+-   Le produit.
+
+-   La quantité donnée comme aide alimentaire, en tonnes.
+
+```{r}
+head(aide_alimentaire)
+```
+
+On va convertir les données de la colonne valeur en kilogrammes pour être cohérent avec les autres tables.
+
+```{r}
+aide_alimentaire$Valeur = aide_alimentaire$Valeur * 1000
+```
+
+Et voici, ce que l'on a :
+
+```{r}
+head(aide_alimentaire)
+```
+
+# 3 Analyses
+
+On va faire plusieurs analyses à fin de déterminer :
+
+-   la proportion de personnes en sous nutrition,
+
+-   le nombre de personnes pouvant être nourri,
+
+-   la répartition des disponibilités alimentaires,
+
+-   les pays les plus sous-alimentés,
+
+-   les pays bénéficiaires d'aide alimentaire,
+
+-   ...
+
+## 3.1 La proportion de personnes en état de sous-nutrition en 2017
+
+On cherche à connaître la proportion mondiale de personnes en état de sous nutrition lors de l'année 2017.
+
+Pour avoir ce résultat, on va procéder par étapes :
+
+-   On va d'abord utiliser la table ***population*** et l'on va grouper les données par année afin d'avoir la population mondiale par année.
+
+-   Puis, on prend la table ***sous_nutrition*** et l'on va la grouper par année également,
+
+-   On va fusionner ces deux tables, et l'on va en déterminer le taux de sous nutrition en fonction de l'année,
+
+-   Il nous restera plus qu'à regarder le résultat pour 2017.
+
+### **a - La table *population* groupée par année**
+
+On crée une nouvelle table - nommée ***population_annee*** - à partir de la table ***population*** groupée par année, en faisant la somme des populations de chaque pays.
+
+```{r}
+population_annee =  
+  population %>% 
+  group_by(Année) %>% 
+  summarise(somme = sum(Valeur))
+
+population_annee
+```
+
+### **b - la table *sous_nutrition* groupée par année**
+
+On crée une nouvelle table - nommée, ***sous_nutrition_par_annee*** - à partir de la table ***sous_nutrition*** groupée par année, en faisant la somme des populatione de chaque pays.
+
+```{r}
+sous_nutrition_par_annee = 
+  sous_nutrition %>% 
+  group_by(Année) %>% 
+  summarise(somme = sum(Valeur))
+
+sous_nutrition_par_annee
+```
+
+On va transformer la colonne **Année** avec la moyenne de deux valeurs. Pour ça, séparons la colonne en deux colonnes et faire la moyenne de ces deux colonnes.
+
+```{r}
+# Séparatation de la colonne année
+sous_nutrition_par_annee = 
+  sous_nutrition_par_annee %>% 
+  separate(Année,c("Année1","Année2"),"-")
+
+# Conversion des nouvelles colonnes en format numérique
+sous_nutrition_par_annee = 
+  sous_nutrition_par_annee %>% 
+  mutate_at(c('Année1','Année2'),as.numeric)
+
+# Moyenne des 2 colonnes
+sous_nutrition_par_annee = 
+  sous_nutrition_par_annee %>% 
+  mutate(Année = (Année2 + Année1)/ 2)
+
+# suppression des colonnes Année1 et Année2
+sous_nutrition_par_annee = select(sous_nutrition_par_annee,-c(Année1,Année2))
+
+sous_nutrition_par_annee
+```
+
+### **c - Le calcul de la proportion de sous-nutrition**
+
+On fusionne les deux tables que l'on a créées précédemment, puis on va rajouter une colonne pour y stocker le calcul du pourcentage de sous nutrition.
+
+```{r}
+# fusion des tables. L'année va nous servir d'identifiant.
+proportion_sous_nutrition = merge(
+  population_annee, sous_nutrition_par_annee, 
+  by = "Année", all = TRUE)
+
+# Renommage des colonnes pour une meilleur lisibilité
+proportion_sous_nutrition = rename(proportion_sous_nutrition,
+  population_total = somme.x, 
+  sous_nutrition_total = somme.y)
+
+# Ajout de la colonne pourcentage pour le calcul de la proportion de sous nutrition
+proportion_sous_nutrition = 
+  proportion_sous_nutrition %>% 
+  mutate(
+    pourcentage = round(sous_nutrition_total *100 /population_total,2))
+  
+proportion_sous_nutrition
+
+```
+
+### **d - Proportion de personnes en état de sous-nutrition en 2017**
+
+Pour avoir la proportion de personnes en état de sous nutrition en 2017, reprendre la table précédente, la filtrer sur l'année 2017, et récupérer la valeur du pourcentage. Ce qui nous donne le résultat suivant :
+
+```{r}
+pourcentage_sous_nutrition_2017 = proportion_sous_nutrition %>% 
+  filter(Année == 2017) %>% 
+  select(pourcentage)
+
+pourcentage_sous_nutrition_2017
+```
+
+### **e - Graphique de l'évolution du taux de sous-nutrition mondiale**
+
+On peut représenter la table précédente contenant le taux de sous nutrition en fonction de l'année sous forme d'un graphique. Pour ça on va utiliser la librairie ***ggplot2***
+
+```{r}
+ggplot(proportion_sous_nutrition, aes(x = Année, y = pourcentage/100)) + 
+  geom_line(color="#4C8ECD", size=1.5, alpha=1) +
+  ggtitle("Évolution du taux de sous-nutrition mondiale")+
+  theme_minimal()+
+  xlab("")+
+  ylab("")+
+  theme(
+    axis.title = element_text(), 
+    text = element_text(family = "Helvetica", color = "#595959"),
+    plot.title = element_text(size=20),
+    axis.text=element_text(size=16))+
+  scale_y_continuous(labels = scales::percent, breaks = c(0.071,0.072,0.073))
+
+```
+
+On peut voir que l'on a une baisse entre 2013 et 2016. Depuis 2016, la sous nutrition mondiale augmente.
+
+**On peut se poser la question pourquoi la sous nutrition mondiale augmente depuis 2016.**
+
+Voici le graphique du nombre de conflits armés sur la période 1946 à 202, issu Du département de recherche de la paix et des conflits de l'université Uppsala en Suède (<https://ucdp.uu.se/downloads/charts/>)
+
+![](armedconf_by_region.png)
+
+Si l'on regarde le graphique des conflits, on ss'aperçoit que depuis 2015, On a une forte augmentation du nombre de conflits ce qui entraîne une sous-nutrition de la population dans ces zone de conflit.
+
+On verra par la suite que les endroits où il y a le plus de sous nutrition sont également les endroits où il y a des conflits.
+
+On peut se demander aussi si le réchauffement climatique ne va pas accélérer la sous_nutrition en limitant le nombre de ressources alimentaires disponibles.
+
+## 3.2 Les pays les plus sous-nutrition en 2017
+
+On regarde un peu plus dans le détail la sous-nutrition en fonction des pays. Plus particulièrement les pays où les taux sont les plus élevés.
+
+Pour ça on va créer une table contenant les données filtrer sur l'année 2017 regroupant les données de la table ***sous_nutrition*** et de la table ***population,*** Puis on rajoute le rapport entre la sous-nutrition et la population.
+
+### a - la création de la table
+
+On crée d'abord les deux tables contenant les données sur 2017.
+
+```{r}
+sous_nutrition_2017 = sous_nutrition %>% filter(Année == "2016-2018")
+
+population_2017 = population %>% filter(Année == 2017)
+```
+
+On fusionne les 2 tables
+
+```{r}
+#Jointure entre le tableau sous_nutrition_2017 et population_2017 par la colonne Zone
+rapport_entre_sous_nutrition_et_population_2017 = 
+  merge(
+    sous_nutrition_2017,population_2017,
+    by = "Zone",all=TRUE)
+
+# renommage des colonnes pour plus de lisibilité
+rapport_entre_sous_nutrition_et_population_2017 =
+  rename(rapport_entre_sous_nutrition_et_population_2017, 
+         Nombre_personne_sous_nutrition = Valeur.x, 
+         Nombre_habitant = Valeur.y)
+
+# supprimer les colonnes inutiles
+
+rapport_entre_sous_nutrition_et_population_2017 = 
+  select(rapport_entre_sous_nutrition_et_population_2017,
+         -c(Année.x,Année.y))
+
+# remplacer les NA par 0
+rapport_entre_sous_nutrition_et_population_2017[is.na(rapport_entre_sous_nutrition_et_population_2017)] = 0 
+```
+
+Voici ce que l'on obtient
+
+```{r}
+rapport_entre_sous_nutrition_et_population_2017
+```
+
+### b - Le calcul du rapport entre la sous nutrition et la population
+
+On calcule maintenant le rapport entre la sous nutrition et la population dans une nouvelle colonne
+
+```{r}
+# Ajout de la colonne pour le calcul du rappot
+rapport_entre_sous_nutrition_et_population_2017 = rapport_entre_sous_nutrition_et_population_2017 %>% mutate(Rapport_pourcentage = round(Nombre_personne_sous_nutrition * 100 / Nombre_habitant,2))
+
+# tri par rapport descendant
+rapport_entre_sous_nutrition_et_population_2017 = arrange(rapport_entre_sous_nutrition_et_population_2017, desc(Rapport_pourcentage))
+```
+
+Voici ce que l'on obtient
+
+```{r}
+rapport_entre_sous_nutrition_et_population_2017
+```
+
+On peut déterminer la liste des pays supérieurs à la moyenne du taux de personnes en sous nutrition. Pour ça on filtre la table que l'on vient de créer avec les lignes qui ont des valeurs de pourcentage supérieur au taux moyen.
+
+```{r}
+rapport_entre_sous_nutrition_et_population_2017 %>% filter(Rapport_pourcentage > pourcentage_sous_nutrition_2017$pourcentage)
+
+```
+
+### c - Les 20 pays pour lesquels la proportion de personnes sous-alimentées est la plus forte
+
+On récupère la liste des 20 pays pour lesquels la proportion de personnes sous-alimentées est la plus forte
+
+```{r}
+pays_les_plus_sous_alimentes = head(rapport_entre_sous_nutrition_et_population_2017,20) 
+
+pays_les_plus_sous_alimentes
+```
+
+On va remplacer certains noms de zones par des noms un peu plus court afin de pouvoir mieux les identifier sur les graphiques.
+
+```{r}
+pays_les_plus_sous_alimentes$Zone[pays_les_plus_sous_alimentes$Zone == "République populaire démocratique de Corée"]	= "Corée du Nord"
+
+pays_les_plus_sous_alimentes$Zone[pays_les_plus_sous_alimentes$Zone == "Venezuela (République bolivarienne du)"]	= "Venezuela"
+
+pays_les_plus_sous_alimentes$Zone[pays_les_plus_sous_alimentes$Zone == "République-Unie de Tanzanie"]	= "Tanzanie"
+pays_les_plus_sous_alimentes
+```
+
+### d - Le graphique des 20 pays pour lesquels la proportion de personnes sous-nutrition est la plus forte
+
+On crée un graphique de forme histogramme afin d'afficher les différents pays où la proportion de sous nutrition est la plus forte.
+
+```{r}
+ggplot(pays_les_plus_sous_alimentes, aes(x = reorder(Zone,Rapport_pourcentage), y =Rapport_pourcentage/100))+
+  geom_bar(stat = "identity",fill="#4C8ECD",color="#4C8ECD") +
+  coord_flip() +
+  ggtitle("Les 20 pays où la sous-nutrition est la plus forte")+
+    theme_minimal()+
+  xlab(NULL)+
+  ylab(NULL)+
+  geom_text(aes(label = paste(round(Rapport_pourcentage,1),"%")), vjust = 0.3, hjust = 1.5, size = 4, color = "white")+
+  ylim(0, 60)+
+  theme(
+    axis.title = element_text(), 
+    text = element_text(family = "Helvetica", color = "#595959"),
+    plot.title = element_text(size=18),
+    axis.text=element_text(size=12))+
+   scale_y_continuous(labels = scales::percent)
+
+```
+
+### e - Conclusion
+
+On peut s'apercevoir qu'une partie des pays de la liste font partie des pays est en conflit, mais ce n'est pas le cas de tous les pays. Il y a d'autres facteurs comme le coût de la vie et l'accès à la nourriture qui ont un impact significatif sur la sous-nutrition.
+
+## 3.3 Nombre de personnes pouvant être nourries
+
+On peut estimer le nombre de personnes que l'on pourrait nourrir avec toute la disponibilité alimentaire mondiale. Pour cela on va :
+
+-   Déterminer le nombre de calories quotidiennes recommandées par personne
+
+-   utiliser la colonne indiquant la disponibilité alimentaire en kcal par jour et par personne de la table Disponibilité_alimentaire
+
+-   comparer ces données avec le nombre de calories quotidiennes recommandées
+
+### **a - Nombre de** calories quotidiennes recommandés
+
+C'est difficile d'avoir un consensus sur le nombre de calories quotidiennes recommandées
+
+voici ce que j'ai trouvé :
+
+> 2700 calories
+
+*source :* <https://fr.wikipedia.org/wiki/Sous-alimentation#Humaines_et_%C3%A9conomiques>
+
+> Devant toutes ces difficultés, la F.A.O. a cessé pendant plusieurs années de publier ses statistiques de disponibilités alimentaires. Elle les a reprises depuis quelques années, sans doute à la suite d'un énorme travail d'interprétation des données. Mais rien ne peut éliminer les incertitudes, en particulier pour tout ce qui concerne l'économie d'autosubsistance, dans laquelle vit encore une grande partie de l'humanité...
+>
+> ...on trouve pour l'ensemble de la population française, avec les femmes, les enfants, les vieillards, une moyenne de 2 200 calories par personne et par jour
+
+*Source - p93 :* <http://www.numdam.org/article/JSFS_1981__122_2_91_0.pdf>
+
+> La malnutrition peut débuter dès que l'on passe en-dessous de 2500 calories par personne et par jour si les apports de protéines animales sont inférieurs à 20 grammes par personne et par jour
+
+*Source - p7* <https://media.electre-ng.com/extraits/extrait-id/b0f53d598dda1df616369c09574d033a3f86b19da1e6190053753e56aab595f1.pdf>
+
+#### **Remarque personnel**
+
+Il y a tellement d'éléments influent le nombre de calories nécessaires comme l'activité de la personne, les conditions climatiques, l'âge, le poids, etc.
+
+Il y a les travaux James Arthur Harris et Francis Gano Benedict - l'équation Harris-Benedict - qui nous donne une approximation de l'apport quotidien en calorie en fonction du poids, de la taille, du genre et de l'âge. <https://en.wikipedia.org/wiki/Harris%E2%80%93Benedict_equation>
+
+Si l'on fait une moyenne des trois valeurs trouvées précédemment (2200, 2500, 2700), on a environ 2500 kcal
+
+### b - Calcul du nombre de personne pouvant être nourries
+
+On prend pour 2500 kcal pour valeur de référence.
+
+```{r}
+calorie_recommande = 2500
+```
+
+Pour chaque zone, on calcule la somme de la disponibilité en calorie disponible. On stocke ce résultat dans une nouvelle table appelé ***dispo_alimentaire_total_par_zone***
+
+```{r}
+# Pour chaque zone, on calcule la moyenne de la disponibilité en calorie disponible 
+dispo_alimentaire_total_par_zone = 
+  dispo_alimentaire %>% 
+  group_by(Zone) %>% 
+  summarise(
+    Disponibilité_alimentaire_calorie_quotidienne = 
+      sum(Disponibilité.alimentaire..Kcal.personne.jour., na.rm = TRUE))
+
+dispo_alimentaire_total_par_zone
+```
+
+On calcule le ratio moyen entre le nombre de calories disponibles et le nombre de calories recommandées
+
+```{r}
+ratio_calorie_dispo_recommande = 
+  mean(
+    dispo_alimentaire_total_par_zone$Disponibilité_alimentaire_calorie_quotidienne)/ calorie_recommande 
+
+round(ratio_calorie_dispo_recommande,2)
+```
+
+À partir du ratio moyen, on peut le multiplier par la population mondiale de 2017 à fin d'avoir le nombre théorique de personnes que l'on pourrait nourrir.
+
+```{r}
+format(
+  ratio_calorie_dispo_recommande  * population_annee$somme[population_annee$Année == 2017],
+  big.mark = " "
+)
+# format(x,  big.mark = " ") permet d'avoir un séparateur de millier 
+```
+
+Pour rappel, la population mondiale en 2017 est de :
+
+```{r}
+format(
+  population_annee$somme[population_annee$Année == 2017],
+   big.mark = " "
+)  
+```
+
+**c- Affichage de la dispersion**
+
+On peut également afficher la dispersion des disponibilités du nombre de calories de chaque pays. On rajoute sur le graphique une ligne verticale correspondant à nos 2500 calories recommandés
+
+```{r}
+graph_dispersion_calorie_disponible = 
+  ggplot(dispo_alimentaire_total_par_zone, 
+         aes(x = Disponibilité_alimentaire_calorie_quotidienne))+ 
+  geom_histogram(binwidth=30, fill="#4C8ECD",color="#4C8ECD") +
+  ggtitle("Dispersion de la disponibilité des calories") +
+  geom_vline(xintercept = 2500, linetype="solid", color = "grey", size = 1.5)+
+    theme_minimal()+
+  xlab("Calories par jour")+
+  ylab("")+
+  theme(axis.title = element_text(), text = element_text(family = "Helvetica", color = "#595959"),plot.title = element_text(size=18),axis.text=element_text(size=16),axis.title.x = element_text(size=18))
+
+graph_dispersion_calorie_disponible
+```
+
+### **c- Conclusion**
+
+On peut voir que si la disponibilité alimentaire est bien géré, ainsi que la consommation sont réparties de manière efficiente sur le monde, on peut nourrir 10 % de plus que la population mondiale. Le graphique de la dispersion nous montre bien qu'il y a plus de pays avec une disponibilité alimentaire supérieure à 2500 kcal.
+
+## 3.4 Nombre de personnes pouvant être nourries seulement avec des produits végétaux
+
+On peut estimer le nombre de personnes pouvant être nourri seulement avec des produits végétaux. La démarche est la même que pour le chapitre précédent, cependant, on va filtrer les données pour avoir les sources d'alimentation d'origine végétale.
+
+### a - Calcul du nombre de personnes pouvant être nourries
+
+On prend pour 2500 calories pour valeur de référence.
+
+```{r}
+calorie_recommande = 2500
+```
+
+Pour chaque zone, on calcule la somme de la disponibilité en calorie disponible. On stocke ce résultat dans une nouvelle table appelé ***dispo_alimentaire_total_par_zone_et_par_vegetaux***
+
+```{r}
+dispo_alimentaire_total_par_zone_et_vegetaux = 
+  dispo_alimentaire %>% 
+  filter(Origine == "vegetale" ) %>% 
+  group_by(Zone) %>% 
+  summarise(
+    Disponibilité_alimentaire_calorie_quotidienne_vegetale = sum(Disponibilité.alimentaire..Kcal.personne.jour., na.rm = TRUE))
+
+```
+
+On calcule le ratio moyen entre le nombre de calories disponibles et le nombre de calories recommandés
+
+```{r}
+ratio_calorie_recommande_vegetaux = 
+  mean(
+    dispo_alimentaire_total_par_zone_et_vegetaux$Disponibilité_alimentaire_calorie_quotidienne_vegetale)/ calorie_recommande 
+
+round(ratio_calorie_recommande_vegetaux,2)
+```
+
+À partir du ratio moyen, on peut le multiplier la population mondiale à fin d'avoir le nombre théorique de personnes que l'on pourrait nourrir.
+
+```{r}
+format(
+  ratio_calorie_recommande_vegetaux  * population_annee$somme[population_annee$Année == 2017],
+    big.mark = " "
+)
+
+```
+
+Pour rappel, la population mondiale en 2017 est de :
+
+```{r}
+format(
+  population_annee$somme[population_annee$Année == 2017],
+  big.mark = " "
+)
+```
+
+### **b - Affichage de la dispersion**
+
+On peut également afficher la dispersion des disponibilités du nombre de calories de chaque pays. On rajoute sur le graphique une ligne verticale correspondant à nos 2500 calories recommandés
+
+```{r}
+graph_dispersion_calorie_disponible_vegetale = 
+  ggplot(dispo_alimentaire_total_par_zone_et_vegetaux, 
+         aes(x = Disponibilité_alimentaire_calorie_quotidienne_vegetale))+ 
+  geom_histogram(binwidth=30, fill="#4C8ECD",color="#4C8ECD") +
+  ggtitle("Dispersion des calories disponibles") +
+  geom_vline(xintercept = 2500, linetype="solid", color = "grey", size = 1.5)+
+  theme_minimal()+
+  xlab("Calories par jour")+
+  ylab("")+
+  theme(axis.title = element_text(), text = element_text(family = "Helvetica", color = "#595959"),plot.title = element_text(size=18),axis.text=element_text(size=16),axis.title.x = element_text(size=18))
+
+graph_dispersion_calorie_disponible_vegetale
+```
+
+### **c - Conclusion**
+
+Contrairement au cas précédent, ici on ne peut pas nourrir toute la population mondiale avec seulement de la production de type végétal. On peut nourrir 90 % de la population mondiale.
+
+## 3.5 La répartition de la disponibilité intérieure
+
+Il est intéressant de savoir comment sont réparties les disponibilités alimentaires. Quelle est la part de disponibilité alimentaire qui va aux êtres humains, aux animaux, à l'export... ?
+
+### a - la formule de la disponibilité
+
+Voici les formules pour obtenir la disponibilité alimentaire
+
+Dispo alimentaire = Production + Importation - Exportation + variation
+
+et
+
+Dispo alimentaire = Aliment pour animaux + Autres utilisations + Nourritures + Pertes + Semence + traitement
+
+### b - La table de répartition de la disponibilité intérieur
+
+On crée une nouvelle table qui va contenir la répartition moyenne entre la partie destinée aux animaux, la nourriture, les pertes et les autres utilisations.
+
+```{r}
+Répartition_dispo_interieur =
+  dispo_alimentaire %>% 
+  filter(Disponibilité.intérieure > 0) %>%
+  summarise(
+    Animal =
+      ifelse(
+        Disponibilité.intérieure <= 0 , 0,
+        mean(
+          Aliments.pour.animaux * 100 / Disponibilité.intérieure,na.rm = TRUE)),
+    Autre_utilisations =
+      ifelse(
+        Disponibilité.intérieure <= 0 , 0,
+        mean(
+          Autres.Utilisations * 100 / Disponibilité.intérieure,na.rm = TRUE)),
+     Nourriture =
+      ifelse(
+        Disponibilité.intérieure <= 0 , 0,
+        mean(
+          Nourriture * 100 / Disponibilité.intérieure,na.rm = TRUE)),
+     Pertes =
+      ifelse(
+        Disponibilité.intérieure <= 0 , 0,
+        mean(
+          Pertes * 100 / Disponibilité.intérieure,na.rm = TRUE)),
+    Semences = ifelse(
+        Disponibilité.intérieure <= 0 , 0,
+        mean(
+            Semences * 100 / Disponibilité.intérieure,na.rm = TRUE)),
+    Traitement = ifelse(
+        Disponibilité.intérieure <= 0 , 0,
+        mean(
+            Traitement * 100 / Disponibilité.intérieure,na.rm = TRUE)),
+  ) %>%
+  distinct()
+
+# On fait une transpostion pour facilité la mise en place du graphique
+Répartition_dispo_interieur = t(Répartition_dispo_interieur)
+Répartition_dispo_interieur
+```
+
+### c - Graphique de la répartition de la disponibilité intérieure.
+
+On crée un data Frame afin de stocker convenablement les données pour le graphique.
+
+```{r}
+df_Repartition_dispo_interieur = data.frame(
+  Type = rownames(Répartition_dispo_interieur),
+  Pourcentage = Répartition_dispo_interieur[,1]
+)
+
+df_Repartition_dispo_interieur
+```
+
+Voici le graphique
+
+```{r}
+ggplot(df_Repartition_dispo_interieur, aes(x=reorder(Type,Pourcentage),y=Pourcentage))+
+  geom_bar(stat = "identity", fill="#4C8ECD",color="#4C8ECD")+
+ ggtitle("Répartition de la disponibilité intérieure")+
+  coord_flip()+
+  geom_text(aes(label = paste(round(Pourcentage,1),"%")), vjust = 0.3, hjust = -0.2, size = 7, color = "#595959")+
+  ylim(0, 100)+
+  scale_x_discrete(labels=c("Semences","Pertes","Traitement","Animaux","Autre utilisation","Nourriture"))+
+  xlab(NULL)+
+  ylab(NULL)+
+  theme_map()+
+  theme(
+    axis.title = element_text(), 
+    text = element_text(family = "Helvetica", color = "#595959"),
+    plot.title = element_text(size=20),
+    axis.text=element_text(size=18),
+    axis.text.x = element_blank())
+```
+
+### d - Conclusion
+
+On peut voir que plus de 76 % de la production de nourriture est destiné à la nourriture des populations. Il y a environ 7 % pour nourrir les animaux et le reste est répartis entre les autres utilisations, les pertes, les semences et le traitement.
+
+## 3.6 Répartition des céréales entre l'alimentation humaine et animale
+
+On peut se demander quelle est la répartition des céréales entre l'alimentation humaine et l'alimentation animale. Pour ça on va définir la liste des céréales et grâce à la table ***dispo_alimentaire***, on va en déduire la répartition entre l'alimentation humaine et animale.
+
+### a - La liste des produits de la catégorie céréales
+
+En recherche sur le site de la FAO, la liste des produits de la catégorie céréales. Voici la liste :
+
+```{r}
+liste_cereale = read.csv("DAN-P4-FAO/liste_cereale.csv",sep = ",",dec = ".")
+liste_cereale
+```
+
+### b - La table de disponibilité alimentaire en céréales
+
+On affiche le nom de tous les produits de la table disponibilités alimentaires. À fin d'avoir la chaîne de caractères exacte pour désigner de chaque céréale.
+
+```{r}
+dispo_alimentaire %>% select(Produit) %>%distinct()
+```
+
+On filtre la table de dispos alimentaire sur les différents noms de produits correspondant aux céréales, puis on stocke le résultat dans une nouvelle table appelée ***dispo_alimentaire_cereale***
+
+```{r}
+dispo_alimentaire_cereale =  dispo_alimentaire %>% filter(Produit == c("Blé","Riz (Eq Blanchi)","Orge","Maïs","Seigle" ,"Avoine", "Millet","Sorgho","Céréales, Autres"))
+dispo_alimentaire_cereale
+```
+
+Sur cette nouvelle table, on va faire un groupé par origine afin d'avoir qu'une seule ligne, puis on détermine la proportion utilisée pour la nourriture et la proportion utilisée pour les animaux.
+
+```{r}
+dispo_alimentaire_cereale =
+  dispo_alimentaire_cereale %>% 
+  group_by(Origine) %>% 
+  select(Nourriture,Aliments.pour.animaux) %>% 
+  summarise(
+   Proportion_nourriture = sum(Nourriture)*100 /(sum(Nourriture)+sum(Aliments.pour.animaux)), Proportion_animaux = sum(Aliments.pour.animaux)*100 /(sum(Nourriture)+sum(Aliments.pour.animaux)))
+
+dispo_alimentaire_cereale
+```
+
+De cette nouvelle table, on va en créer data frame afin de pouvoir l'exploiter lors de l'affichage du graphique.
+
+```{r}
+df_dispo_alimentaire_cereale = data.frame(
+  Utilisation = colnames(dispo_alimentaire_cereale[,2:3]),
+  Pourcentage = c(round(dispo_alimentaire_cereale$Proportion_nourriture,1),
+                  round(dispo_alimentaire_cereale$Proportion_animaux,1))
+)
+
+df_dispo_alimentaire_cereale
+```
+
+On va renommer un peu les catégories avec des noms plus court et voilà le résultat
+
+```{r}
+df_dispo_alimentaire_cereale$Utilisation[df_dispo_alimentaire_cereale$Utilisation == "Proportion_nourriture"] = "Nourriture"
+
+df_dispo_alimentaire_cereale$Utilisation[df_dispo_alimentaire_cereale$Utilisation == "Proportion_animaux"] = "Animal"
+
+df_dispo_alimentaire_cereale
+```
+
+### c - le graphique de la répartition
+
+Et on génère le graphique.
+
+```{r}
+ggplot(df_dispo_alimentaire_cereale, aes(x = Utilisation, y = Pourcentage))+
+  geom_bar(stat = "identity", fill="#4C8ECD",color="#4C8ECD")+
+  theme_map()+
+  ggtitle("Répartition de l'utilisation des céréales")+
+  xlab("")+
+  ylab("")+
+   geom_text(aes(label = paste(round(Pourcentage,1),"%")), vjust = 2, hjust = 0.5, size = 12, color = "white")+
+    theme(
+      axis.title = element_text(), 
+      text = element_text(family = "Helvetica", color = "#595959"),
+      plot.title = element_text(size=18),
+      axis.text.x =element_text(size=20))
+```
+
+### d - conclusion
+
+On peut voir que pratiquement les trois quarts de la disponibilité les céréales est utilisé pour nourrir les animaux. On peut se poser les questions suivantes
+
+-   si l'on consommait moins de viande, est-ce qu'il y aurait plus de disponibilité provenant des céréales pour la nourriture humaine ?
+
+-   Est-ce une piste envisageable pour lutter contre la sous-nutrition ?
+
+## 3.7  Et si l'on diminuait notre alimentation issue d'origine animale
+
+Ici, on va calculer le nombre de personnes que l'on peut nourrir si l'on diminue notre alimentation issue d'origine animale. Nous avons vu au 3.6, que la disponibilité en céréales était majoritairement utilisée pour nourrir des animaux. Que se passerait-il si l'on réduit notre alimentation d'origine animale de 20 % ? Et, que l'on utilise les céréales destinés aux animaux dans notre nourriture.
+
+### a - Calcul de la disponibilité en calorie si l'on diminue l'alimentation issue d'origine animale
+
+On filtre la table disponibilités alimentaires pour récupérer les colonnes qui nous intéressent.
+
+```{r}
+dispo_alimentaire_moins_20_pourcent_animal = 
+  dispo_alimentaire %>% 
+  select(
+    Zone,
+    Produit,
+    Origine,
+    Aliments.pour.animaux,
+    Disponibilité.alimentaire..Kcal.personne.jour.,
+    Nourriture
+  )
+
+
+dispo_alimentaire_moins_20_pourcent_animal
+```
+
+Maintenant, on installe notre hypothèse.
+
+On va réduire de 20 % la consommation d'origine animale.
+
+Ce qu'il va avoir pour conséquence :
+
+-   Un apport de calories réduit de 20 % sur la nourriture d'origine animale.
+
+-   Une diminution de la part réservée à nourrir les animaux. Parce que s'il y a moins d'animaux à manger, il y a moins d'animaux élevés donc la nourriture utilisée pour les animaux peut aller directement aux êtres humains.
+
+Pour le premier point, c'est assez simple, il suffit de diminuer le nombre de calories disponibles par jour de 20 % lorsque l'origine est animale.
+
+Pour le second point, lorsqu'il y a des aliments prévus pour les animaux, on va prendre 20 % de cette catégorie pour la remettre dans la catégorie nourriture pour les humains. Après on calcule le nombre de calories disponibles.
+
+```{r}
+dispo_alimentaire_moins_20_pourcent_animal =
+  dispo_alimentaire_moins_20_pourcent_animal %>%
+  summarise(
+      Zone,
+    Produit,
+    Origine,
+    calorie =
+      ifelse(
+        Origine == "Animal",
+        Disponibilité.alimentaire..Kcal.personne.jour. *0.8,
+        ifelse(
+          Nourriture >0,
+        ((Aliments.pour.animaux * 0.2 / Nourriture) + 1) *Disponibilité.alimentaire..Kcal.personne.jour.,
+        0))
+  )
+
+dispo_alimentaire_moins_20_pourcent_animal
+```
+
+On fait un groupement par zone afin de voir le nombre de calories disponibles pour chaque zone.
+
+```{r}
+d_zone =
+  dispo_alimentaire_moins_20_pourcent_animal %>%
+  group_by(Zone) %>%
+  summarise(
+    calorie = sum(calorie, na.rm = TRUE)
+  )
+
+d_zone
+```
+
+### b - Calcul du nombre d'habitants que l'on pourrait nourrir si l'on diminue de 20 % la consommation mondiale issue d'origine animale
+
+Alors, on calcule le ratio moyen entre le nombre de calories disponibles et le nombre de calories recommandées
+
+À partir du ratio moyen, on peut le multiplier par la population mondiale de 2017 à fin d'avoir le nombre théorique de personnes que l'on serait capable de nourrir.
+
+```{r}
+ratio = 
+  mean(
+    d_zone$calorie)/ calorie_recommande 
+
+ratio
+
+ 
+
+format(
+  ratio * population_annee$somme[population_annee$Année == 2017],
+    big.mark = " "
+)
+```
+
+### c - conclusion
+
+Ainsi, on voit que si l'on réduit de 20 % la consommation de nourriture issue d'origine animale, on nourrit potentiellement 20 % de plus que la population mondiale. Est-ce qu'il est réaliste de réduire de 20 % de la consommation de viande ?
+
+## 3.8 Les pays bénéfiaires le plus d'aide depuis 2013
+
+Maintenant, on va voir quels sont les pays qui ont bénéficié le plus d'aide depuis 2013. Pour ça on va utiliser la table aide alimentaire, et l'on va faire la somme de l'aide pour chaque pays depuis 2013.
+
+### a - La table du total d'aide alimentaire depuis 2013
+
+On va créer une table qui va lister l'aide alimentaire groupé par pays et par année.
+
+```{r}
+aide_alimentaire_by_zone = aide_alimentaire %>% group_by(Pays.bénéficiaire,Année) %>% summarise(valeur_total = sum(Valeur))
+
+aide_alimentaire_by_zone
+```
+
+On crée une autre table afin d'avoir la somme totale par pays depuis 2013.
+
+```{r}
+aide_alimentaire_by_zone_total = aide_alimentaire_by_zone %>% group_by(Pays.bénéficiaire) %>% summarise(total_aide = sum(valeur_total))
+
+
+```
+
+On trie les données pour avoir les 20 pays les plus ayant reçu le plus d'aide alimentaire.
+
+```{r}
+aide_alimentaire_by_zone_total = arrange(aide_alimentaire_by_zone_total, desc(total_aide))
+
+
+head(aide_alimentaire_by_zone_total, 20)
+```
+
+### b - Graphique des pays bénéficiaires le plus d'aide depuis 2013
+
+On va remplacer certains nombres de zones par des noms un peu plus court afin de pouvoir mieux les identifier sur les graphiques.
+
+```{r}
+aide_alimentaire_by_zone_total$Pays.bénéficiaire[aide_alimentaire_by_zone_total$Pays.bénéficiaire == "République populaire démocratique de Corée"]	= "Corée du Nord"
+
+aide_alimentaire_by_zone_total$Pays.bénéficiaire[aide_alimentaire_by_zone_total$Pays.bénéficiaire == "Venezuela (République bolivarienne du)"]	= "Venezuela"
+
+aide_alimentaire_by_zone_total$Pays.bénéficiaire[aide_alimentaire_by_zone_total$Pays.bénéficiaire == "République-Unie de Tanzanie"]	= "Tanzanie"
+
+aide_alimentaire_by_zone_total$Pays.bénéficiaire[aide_alimentaire_by_zone_total$Pays.bénéficiaire == "République démocratique du Congo"]	= "Congo"
+
+aide_alimentaire_by_zone_total$Pays.bénéficiaire[aide_alimentaire_by_zone_total$Pays.bénéficiaire == "République arabe syrienne"]	= "Syrie"
+
+head(aide_alimentaire_by_zone_total, 20)
+```
+
+On crée le graphique pour voir les pays ayant bénéficié le plus d'aide et combien ont-ils bénéficiés d'aide alimentaire. Pour ce graphique, l'on convertit les kilogrammes en tonnes pour une meilleure lisibilité des chiffres.
+
+```{r}
+ggplot(head(aide_alimentaire_by_zone_total, 10),aes(x=
+reorder(Pays.bénéficiaire,total_aide), y=total_aide/1000))+
+  geom_bar(stat = "identity",fill="#4C8ECD",color="#4C8ECD") +
+  coord_flip()+
+  ggtitle("Pays les ayant bénéficiés le plus d'aide depuis 2013")+
+  xlab(NULL)+ylab(NULL)+
+  geom_text(aes(label = paste(format(round(total_aide/1000,0),big.mark = " "),"t")), vjust = 0.3, hjust = 1.05, size = 4, color = "white")+
+  ylim(0,1900000)+
+  theme_map()+
+  theme(
+    axis.title = element_text(), 
+    text = element_text(family = "Helvetica", color = "#595959"),
+    plot.title = element_text(size=16),
+    axis.text=element_text(size=15),
+    axis.text.x = element_blank())
+
+```
+
+### c - Conclusion
+
+La majeure partie de ces pays sur les pays soit en conflit soyez en connu entre guillemets catastrophes naturelles comme des sécheresses, ou des tsunamis.
+
+## 3.9 Les pays ayant le plus de disponibilité alimentaire par rapport au nombre d'habitants
+
+On va chercher à identifier les pays ayant le plus de disponibilité alimentaire par rapport au nombre d'habitants
+
+### a - La table des pays ayant plus de 3300 calories disponibles par jour et par personne
+
+Pour ça, on va prendre la donner de la disponibilité alimentaire en calories quotidienne qui est déjà ramené pour un habitant. De cette donnée, on va prendre les pays qui en ont le plus et ceux qui en ont le moins.
+
+On fait un petit trier par ordre croissant
+
+```{r}
+dispo_alimentaire_total_par_zone = arrange(dispo_alimentaire_total_par_zone, Disponibilité_alimentaire_calorie_quotidienne)
+
+```
+
+Et l'on met dans une autre table, tous les pays qui ont plus de 3300 calories disponibles par jour et par habitant
+
+```{r}
+dispo_alimentaire_total_par_zone_sup_3300 = dispo_alimentaire_total_par_zone %>% filter(Disponibilité_alimentaire_calorie_quotidienne >= 3300, na.rm = TRUE)
+
+dispo_alimentaire_total_par_zone_sup_3300
+```
+
+### b - Graphique des pays ayant le plus de disponibilité alimentaire
+
+On crée le graphique indiquant pour chacun de ces pays le nombre de calories disponibles par jour et par habitant.
+
+```{r}
+ggplot(dispo_alimentaire_total_par_zone_sup_3300, aes(x = reorder(Zone,Disponibilité_alimentaire_calorie_quotidienne), y = Disponibilité_alimentaire_calorie_quotidienne))+
+  geom_bar(stat = "identity", fill="#4C8ECD",color="#4C8ECD")+
+  coord_flip()+
+  ggtitle("Les pays ayant le plus de disponibilité alimentaire")+
+  xlab(NULL) + ylab("Nombre de kcal disponible par jour et par habitant")+
+  geom_text(aes(label = Disponibilité_alimentaire_calorie_quotidienne), vjust = 0.3, hjust = 1.5, size = 3, color = "White")+
+  theme_map()+
+  theme(
+    axis.title = element_text(), 
+    text = element_text(family = "Helvetica", color = "#595959"),
+    plot.title = element_text(size=16),
+    axis.text=element_text(size=10),
+    axis.text.x = element_blank())
+```
+
+### c - conclusion
+
+Si l'on reprend notre moyenne de 2500 calories recommandées par jour, on voit bien que tous ces pays ont largement de quoi nourrir leur population. La question que l'on peut se poser c'est la suivante : est-ce qu'il consomme toutes ces calories, ou est-ce qu'il est redistribué à d'autres populations en déficit calorique ?
+
+## 3.10 Les pays ayant le moins de disponibilité alimentaire par rapport au nombre d'habitants
+
+Pour cette partie on va faire un peu la même chose que pour le chapitre précédent, sauf qu'ici on va prendre les pays qui ont moins de 2500 calories disponible par jour et par habitant
+
+### a - La table des pays ayant moins de 2500 calories disponibles par jour et par personne
+
+On met dans une table les pays qui ont moins de 2500 calories par jour
+
+```{r}
+dispo_alimentaire_total_par_zone_inf_2500 = dispo_alimentaire_total_par_zone %>% filter(Disponibilité_alimentaire_calorie_quotidienne <= 2500, na.rm = TRUE)
+
+dispo_alimentaire_total_par_zone_inf_2500
+```
+
+### b - Graphique des pays ayant le moins de disponibilité alimentaire
+
+```{r}
+ggplot(dispo_alimentaire_total_par_zone_inf_2500, aes(x = reorder(Zone,Disponibilité_alimentaire_calorie_quotidienne), y = Disponibilité_alimentaire_calorie_quotidienne))+
+  geom_bar(stat = "identity", fill="#4C8ECD",color="#4C8ECD")+
+  coord_flip()+
+  ggtitle("Les pays ayant le moins de disponibilité alimentaire")+
+    xlab(NULL) + ylab("Nombre de kcal disponible par jour et par habitant")+
+  geom_text(aes(label = Disponibilité_alimentaire_calorie_quotidienne), vjust = 0.3, hjust = 1.5, size = 3, color = "White")+
+    theme_map()+
+  theme(
+    axis.title = element_text(), 
+    text = element_text(family = "Helvetica", color = "#595959"),
+    plot.title = element_text(size=16),
+    axis.text=element_text(size=8),
+    axis.text.x = element_blank())
+```
+
+### c - Conclusion
+
+Il y a quand même des pays qui ont moins de disponibilité calorique que celle recommandés pour leurs habitants. On verra avec un exemple particulier sur la Thaïlande que même si les disponibilités sont produites dans le pays, c'est pas forcément à destination de la population locale.
+
+## 3.11 Exemple particulier du manioc en Thaïlande
+
+Il y a un cas particulier ou il est intéressant de mettre l'accent, car je pense qu'il va se retrouver dans plusieurs endroits. C'est l'utilisation du manioc et sa répartition entre la nourriture et l'exportation, et plus particulièrement en Thaïlande.
+
+### a - Taux de sous nutrition de la Thaïlande
+
+On filtre les données de table sous nutrition et population afin d'avoir les résultats pour la Thaïlande et l'année 2017.
+
+```{r}
+sous_nutrition_thailande_2017 = sous_nutrition %>% filter(Zone == "Thaïlande", Année == "2016-2018") %>% select(Zone,Valeur)
+
+Population_thailande_2017 = population %>% filter(Zone == "Thaïlande", Année == 2017) %>% select(Zone,Valeur)
+```
+
+On calcule le taux de sous nutrition de la Thaïlande pour l'année 2017.
+
+```{r}
+Taux_sous_nutrition_thailande = sous_nutrition_thailande_2017$Valeur *100 /Population_thailande_2017$Valeur
+
+round(Taux_sous_nutrition_thailande,2)
+
+```
+
+On peut voir que le taux de sous nutrition est plus élevé que le taux moyen mondial. Pour rappel, le taux moyen global est de 7,1 %
+
+### b - Nombre de calories disponibles en Thaïlande par jour et par habitant.
+
+On va filtrer pour la Thaïlande, la table que l'on a créée un peu plus tôt sur les disponibilités alimentaires par zone.
+
+```{r}
+dispo_alimentaire_total_par_zone %>% filter(Zone == "Thaïlande")
+```
+
+### c - L'utilisation du Manioc en Thaïlande
+
+On crée une table contenant seulement les données filtrées de la disponibilité alimentaire pour la zone Thaïlande et le manioc.
+
+```{r}
+
+dispo_alimentaire_thailande_manioc = dispo_alimentaire %>% filter(Zone == "Thaïlande", Produit == "Manioc")
+```
+
+On supprime les colonnes qui nous intéresse pas.
+
+```{r}
+dispo_alimentaire_thailande_manioc = select(dispo_alimentaire_thailande_manioc,-c(Zone,Produit,Origine,Disponibilité.alimentaire..Kcal.personne.jour.,Disponibilité.alimentaire.en.quantité..kg.personne.an.,Disponibilité.de.matière.grasse.en.quantité..g.personne.jour.,Disponibilité.de.protéines.en.quantité..g.personne.jour.,Disponibilité.intérieure))
+```
+
+On crée un data Frame en transposant les données stockées en colonne.
+
+```{r}
+df_dispo_alimentaire_thailande_manioc = as.data.frame(t(dispo_alimentaire_thailande_manioc))
+
+df_dispo_alimentaire_thailande_manioc 
+```
+
+### d - Graphique de la répartition de la disponibilité du manioc en Thaïlande.
+
+On va maintenant afficher sous forme de graphique la répartition en pourcentage de la production pour voir quelle est la part de l'exportation et l'apport de nourriture principalement. Ainsi que les autres utilisations.
+
+On calcule la somme de l'importation et de la production de manioc afin de connaître la disponibilité de manioc dans le pays.
+
+```{r}
+dispo_alimentaire_thailande_manioc_total = 
+  df_dispo_alimentaire_thailande_manioc$V1[row.names(df_dispo_alimentaire_thailande_manioc) == "Production"]+
+  df_dispo_alimentaire_thailande_manioc$V1[row.names(df_dispo_alimentaire_thailande_manioc) == "Importations...Quantité"]
+
+dispo_alimentaire_thailande_manioc_total
+```
+
+Donc, on reprend le data Frame précédent et l'on supprime la ligne production qui est le total des deux autres lignes.
+
+```{r}
+df_dispo_alimentaire_thailande_manioc_pourcentage = df_dispo_alimentaire_thailande_manioc %>% 
+  filter(
+    row.names(df_dispo_alimentaire_thailande_manioc) != "Production", 
+    row.names(df_dispo_alimentaire_thailande_manioc) != "Importations...Quantité")
+
+  df_dispo_alimentaire_thailande_manioc_pourcentage
+```
+
+On va convertir la colonne V1 en pourcentage par rapport à la somme qu'on a calculé précédemment de l'imports et de la production.
+
+```{r}
+df_dispo_alimentaire_thailande_manioc_pourcentage$V1 = round(df_dispo_alimentaire_thailande_manioc_pourcentage$V1 * 100 / dispo_alimentaire_thailande_manioc_total,2)
+```
+
+On va renommer la colonne V1 en pourcentage.
+
+```{r}
+df_dispo_alimentaire_thailande_manioc_pourcentage = rename(
+  df_dispo_alimentaire_thailande_manioc_pourcentage,
+  Pourcentage = V1
+)
+```
+
+Voilà ce que ça donne
+
+```{r}
+df_dispo_alimentaire_thailande_manioc_pourcentage
+```
+
+On supprime les valeurs à 0
+
+```{r}
+df_dispo_alimentaire_thailande_manioc_pourcentage=
+df_dispo_alimentaire_thailande_manioc_pourcentage %>%
+  filter(Pourcentage > 0)
+```
+
+Voici le graphique de la répartition
+
+```{r}
+ggplot(df_dispo_alimentaire_thailande_manioc_pourcentage, aes(x = reorder(rownames(df_dispo_alimentaire_thailande_manioc_pourcentage),Pourcentage), y = Pourcentage))+
+    geom_bar(stat = "identity",fill="#4C8ECD",color="#4C8ECD") +
+  coord_flip()+
+  ggtitle("Répartition de la disponibilité du manioc en Thaïlande")+
+  xlab(NULL)+ylab(NULL)+
+    geom_text(aes(label = paste(round(Pourcentage,1),"%")), vjust = 0.3, hjust = -0.1, size = 7, color = "#595959")+
+  ylim(0,100) +
+  scale_x_discrete(labels=c("Nourriture","Pertes","Animaux","Autre utilisation","Export"))+
+  theme_map()+
+    theme(
+    axis.title = element_text(), 
+    text = element_text(family = "Helvetica", color = "#595959"),
+    plot.title = element_text(size=14),
+    axis.text=element_text(size=18),
+    axis.text.x = element_blank())
+  
+```
+
+### e - Conclusion
+
+On peut voir sur le graphique, que la majorité de la production du manioc est réservée à l'exportation.
