@@ -1,6 +1,7 @@
 # Étude de santé publique avec R
  
-Projet N°4 de la formation de Data Analyst OpenClassrooms. Ce projet a été créé dans le cadre de la formation de Data Analyst OpenClassrooms. Il vise à démontrer les compétences en matière de :
+Ce projet a été créé dans le cadre de la formation de Data Analyst
+. Il vise à démontrer les compétences en matière de :
 - Prise en main du langage R
 
 ## Objectifs pédagogiques
